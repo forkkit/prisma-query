@@ -8,7 +8,6 @@ pub struct Delete<'a> {
 }
 
 impl<'a> From<Delete<'a>> for Query<'a> {
-    #[inline]
     fn from(delete: Delete<'a>) -> Self {
         Query::Delete(Box::new(delete))
     }
@@ -18,13 +17,12 @@ impl<'a> Delete<'a> {
     /// Creates a new `DELETE` statement for the given table.
     ///
     /// ```rust
-    /// # use prisma_query::{ast::*, visitor::{Visitor, Sqlite}};
+    /// # use quaint::{ast::*, visitor::{Visitor, Sqlite}};
     /// let query = Delete::from_table("users");
     /// let (sql, _) = Sqlite::build(query);
     ///
     /// assert_eq!("DELETE FROM `users`", sql);
     /// ```
-    #[inline]
     pub fn from_table<T>(table: T) -> Self
     where
         T: Into<Table<'a>>,
@@ -39,12 +37,12 @@ impl<'a> Delete<'a> {
     /// [Comparable](trait.Comparable.html#required-methods) for more examples.
     ///
     /// ```rust
-    /// # use prisma_query::{ast::*, visitor::{Visitor, Sqlite}};
+    /// # use quaint::{ast::*, visitor::{Visitor, Sqlite}};
     /// let query = Delete::from_table("users").so_that("bar".equals(false));
     /// let (sql, params) = Sqlite::build(query);
     ///
     /// assert_eq!("DELETE FROM `users` WHERE `bar` = ?", sql);
-    /// assert_eq!(vec![ParameterizedValue::Boolean(false)], params);
+    /// assert_eq!(vec![Value::Boolean(false)], params);
     /// ```
     pub fn so_that<T>(mut self, conditions: T) -> Self
     where

@@ -1,6 +1,8 @@
 use crate::ast::{Column, IntoOrderDefinition, Over};
 
 #[derive(Debug, Default, Clone, PartialEq)]
+/// A window function that assigns a sequential integer
+/// number to each row in the query’s result set.
 pub struct RowNumber<'a> {
     pub(crate) over: Over<'a>,
 }
@@ -28,7 +30,7 @@ impl<'a> RowNumber<'a> {
 /// A number from 1 to n in specified order
 ///
 /// ```rust
-/// # use prisma_query::{ast::*, visitor::{Visitor, Sqlite}};
+/// # use quaint::{ast::*, visitor::{Visitor, Sqlite}};
 /// let fun = Function::from(row_number().order_by("created_at").partition_by("name"));
 ///
 /// let query = Select::from_table("users")
@@ -42,7 +44,6 @@ impl<'a> RowNumber<'a> {
 ///     sql
 /// );
 /// ```
-#[inline]
 pub fn row_number<'a>() -> RowNumber<'a> {
     RowNumber::default()
 }

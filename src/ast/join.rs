@@ -12,8 +12,12 @@ pub struct JoinData<'a> {
 pub enum Join<'a> {
     /// Implements an `INNER JOIN` with given `JoinData`.
     Inner(JoinData<'a>),
-    /// Implements an `LEFT OUTER JOIN` with given `JoinData`.
-    LeftOuter(JoinData<'a>),
+    /// Implements an `LEFT JOIN` with given `JoinData`.
+    Left(JoinData<'a>),
+    /// Implements an `RIGHT JOIN` with given `JoinData`.
+    Right(JoinData<'a>),
+    /// Implements an `FULL JOIN` with given `JoinData`.
+    Full(JoinData<'a>),
 }
 
 /// An item that can be joined.
@@ -21,7 +25,7 @@ pub trait Joinable<'a> {
     /// Add the `JOIN` conditions.
     ///
     /// ```rust
-    /// # use prisma_query::{ast::*, visitor::{Visitor, Sqlite}};
+    /// # use quaint::{ast::*, visitor::{Visitor, Sqlite}};
     /// let join_data = "b".on(("b", "id").equals(Column::from(("a", "id"))));
     /// let query = Select::from_table("a").inner_join(join_data);
     /// let (sql, _) = Sqlite::build(query);
@@ -40,7 +44,6 @@ impl<'a, U> Joinable<'a> for U
 where
     U: Into<Table<'a>>,
 {
-    #[inline]
     fn on<T>(self, conditions: T) -> JoinData<'a>
     where
         T: Into<ConditionTree<'a>>,

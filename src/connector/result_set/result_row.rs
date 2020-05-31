@@ -1,17 +1,20 @@
-use crate::ast::ParameterizedValue;
-use std::{collections::BTreeMap, sync::Arc};
+use crate::{
+    ast::Value,
+    error::{Error, ErrorKind},
+};
+use std::sync::Arc;
 
 /// An owned version of a `Row` in a `ResultSet`. See
 /// [ResultRowRef](struct.ResultRowRef.html) for documentation on data access.
 #[derive(Debug)]
 pub struct ResultRow {
-    pub(crate) name_to_index: Arc<BTreeMap<String, usize>>,
-    pub(crate) values: Vec<ParameterizedValue<'static>>,
+    pub(crate) columns: Arc<Vec<String>>,
+    pub(crate) values: Vec<Value<'static>>,
 }
 
 impl IntoIterator for ResultRow {
-    type Item = ParameterizedValue<'static>;
-    type IntoIter = std::vec::IntoIter<ParameterizedValue<'static>>;
+    type Item = Value<'static>;
+    type IntoIter = std::vec::IntoIter<Value<'static>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.values.into_iter()
@@ -22,7 +25,7 @@ impl IntoIterator for ResultRow {
 /// through their position or using the column name.
 ///
 /// ```
-/// # use prisma_query::connector::*;
+/// # use quaint::connector::*;
 /// let names = vec!["id".to_string(), "name".to_string()];
 /// let rows = vec![vec!["1234".into(), "Musti".into()]];
 ///
@@ -34,15 +37,15 @@ impl IntoIterator for ResultRow {
 /// ```
 #[derive(Debug)]
 pub struct ResultRowRef<'a> {
-    pub(crate) name_to_index: Arc<BTreeMap<String, usize>>,
-    pub(crate) values: &'a Vec<ParameterizedValue<'static>>,
+    pub(crate) columns: Arc<Vec<String>>,
+    pub(crate) values: &'a Vec<Value<'static>>,
 }
 
 impl ResultRow {
     /// Take a value from a certain position in the row, if having a value in
     /// that position. Usage documentation in
     /// [ResultRowRef](struct.ResultRowRef.html).
-    pub fn at(&self, i: usize) -> Option<&ParameterizedValue<'static>> {
+    pub fn at(&self, i: usize) -> Option<&Value<'static>> {
         if self.values.len() <= i {
             None
         } else {
@@ -52,9 +55,9 @@ impl ResultRow {
 
     /// Take a value with the given column name from the row. Usage
     /// documentation in [ResultRowRef](struct.ResultRowRef.html).
-    pub fn get(&self, name: &str) -> Option<&ParameterizedValue<'static>> {
-        if let Some(idx) = self.name_to_index.get(name) {
-            Some(&self.values[*idx])
+    pub fn get(&self, name: &str) -> Option<&Value<'static>> {
+        if let Some(idx) = self.columns.iter().position(|c| c == name) {
+            Some(&self.values[idx])
         } else {
             None
         }
@@ -63,8 +66,15 @@ impl ResultRow {
     /// Make a referring [ResultRowRef](struct.ResultRowRef.html).
     pub fn as_ref(&self) -> ResultRowRef {
         ResultRowRef {
-            name_to_index: Arc::clone(&self.name_to_index),
+            columns: Arc::clone(&self.columns),
             values: &self.values,
+        }
+    }
+
+    pub fn into_single(self) -> crate::Result<Value<'static>> {
+        match self.into_iter().next() {
+            Some(val) => Ok(val),
+            None => Err(Error::builder(ErrorKind::NotFound).build()),
         }
     }
 }
@@ -74,14 +84,14 @@ impl<'a> ResultRowRef<'a> {
     /// that position.
     ///
     /// ```
-    /// # use prisma_query::connector::*;
+    /// # use quaint::connector::*;
     /// # let names = vec!["id".to_string(), "name".to_string()];
     /// # let rows = vec![vec!["1234".into(), "Musti".into()]];
     /// # let result_set = ResultSet::new(names, rows);
     /// # let row = result_set.first().unwrap();
     /// assert_eq!(Some(&row[0]), row.at(0));
     /// ```
-    pub fn at(&self, i: usize) -> Option<&ParameterizedValue<'static>> {
+    pub fn at(&self, i: usize) -> Option<&Value<'static>> {
         if self.values.len() <= i {
             None
         } else {
@@ -92,16 +102,16 @@ impl<'a> ResultRowRef<'a> {
     /// Take a value with the given column name from the row.
     ///
     /// ```
-    /// # use prisma_query::connector::*;
+    /// # use quaint::connector::*;
     /// # let names = vec!["id".to_string(), "name".to_string()];
     /// # let rows = vec![vec!["1234".into(), "Musti".into()]];
     /// # let result_set = ResultSet::new(names, rows);
     /// # let row = result_set.first().unwrap();
     /// assert_eq!(Some(&row["id"]), row.get("id"));
     /// ```
-    pub fn get(&self, name: &str) -> Option<&ParameterizedValue<'static>> {
-        if let Some(idx) = self.name_to_index.get(name) {
-            Some(&self.values[*idx])
+    pub fn get(&self, name: &str) -> Option<&Value<'static>> {
+        if let Some(idx) = self.columns.iter().position(|c| c == name) {
+            Some(&self.values[idx])
         } else {
             None
         }

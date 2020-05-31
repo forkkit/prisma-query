@@ -1,15 +1,13 @@
-//! # prisma-query
+//! # quaint
 //!
-//! prisma-query is an AST and database-specific visitors for creating SQL
-//! statements.
-//!
-//! Under construction and will go through several rounds of changes. Not meant
-//! for production use in the current form.
+//! A database client abstraction for reading and writing to an SQL database in a
+//! safe manner.
 //!
 //! ### Goals
 //!
-//! - Query generation when the database and conditions are not known beforehand.
-//! - Parameterized queries when possible.
+//! - Query generation when the database and conditions are not known at compile
+//!   time.
+//! - Parameterized queries.
 //! - A modular design, separate AST for query building and visitors for
 //!   different databases.
 //! - Database support behind a feature flag.
@@ -24,9 +22,50 @@
 //! - PostgreSQL
 //! - MySQL
 //!
-//! ## Examples
+//! ### Methods of connecting
 //!
-//! ### Building an SQL query string
+//! Quaint provides two options to connect to the underlying database.
+//!
+//! The [single connection method](single/struct.Quaint.html):
+//!
+//! ``` rust
+//! use quaint::{prelude::*, single::Quaint};
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), quaint::error::Error> {
+//!     let conn = Quaint::new("file:///tmp/example.db").await?;
+//!     let result = conn.select(Select::default().value(1)).await?;
+//!
+//!     assert_eq!(
+//!         Some(1),
+//!         result.into_iter().nth(0).and_then(|row| row[0].as_i64()),
+//!     );
+//!
+//!     Ok(())
+//! }
+//! ```
+//!
+//! The [pooled method](pooled/struct.Quaint.html):
+//!
+//! ``` rust
+//! use quaint::{prelude::*, pooled::Quaint};
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), quaint::error::Error> {
+//!     let pool = Quaint::builder("file:///tmp/example.db")?.build();
+//!     let conn = pool.check_out().await?;
+//!     let result = conn.select(Select::default().value(1)).await?;
+//!
+//!     assert_eq!(
+//!         Some(1),
+//!         result.into_iter().nth(0).and_then(|row| row[0].as_i64()),
+//!     );
+//!
+//!     Ok(())
+//! }
+//! ```
+//!
+//! ### Using the AST module
 //!
 //! The crate can be used as an SQL string builder using the [ast](ast/index.html) and
 //! [visitor](visitor/index.html) modules.
@@ -37,92 +76,60 @@
 //! The visitor returns the query as a string and its parameters as a vector.
 //!
 //! ```
-//! use prisma_query::{ast::*, visitor::{Sqlite, Visitor}};
+//! # use quaint::{prelude::*, visitor::{Sqlite, Visitor}};
+//! let conditions = "word"
+//!     .equals("meow")
+//!     .and("age".less_than(10))
+//!     .and("paw".equals("warm"));
 //!
-//! fn main() {
-//!     let conditions = "word"
-//!         .equals("meow")
-//!         .and("age".less_than(10))
-//!         .and("paw".equals("warm"));
+//! let query = Select::from_table("naukio").so_that(conditions);
+//! let (sql_str, params) = Sqlite::build(query);
 //!
-//!     let query = Select::from_table("naukio").so_that(conditions);
-//!     let (sql_str, params) = Sqlite::build(query);
+//! assert_eq!(
+//!     "SELECT `naukio`.* FROM `naukio` WHERE (`word` = ? AND `age` < ? AND `paw` = ?)",
+//!     sql_str,
+//! );
 //!
-//!     assert_eq!(
-//!         "SELECT `naukio`.* FROM `naukio` WHERE ((`word` = ? AND `age` < ?) AND `paw` = ?)",
-//!         sql_str,
-//!     );
-//!
-//!     assert_eq!(
-//!         vec![
-//!             ParameterizedValue::from("meow"),
-//!             ParameterizedValue::from(10),
-//!             ParameterizedValue::from("warm"),
-//!         ],
-//!         params
-//!     );
-//! }
+//! assert_eq!(
+//!     vec![
+//!         Value::from("meow"),
+//!         Value::from(10),
+//!         Value::from("warm"),
+//!     ],
+//!     params
+//! );
 //! ```
-//!
-//! ### Querying a database with an AST object
-//!
-//! The [connector](connector/index.html) module abstracts a generic query interface over
-//! different databases. It offers querying with the [ast](ast/index.html) module or
-//! directly using raw strings.
-//!
-//! When querying with an ast object the queries are paremeterized
-//! automatically.
-//!
-//! ```
-//! use prisma_query::{ast::*, connector::*};
-//!
-//! fn main() {
-//!     let mut conn = Sqlite::new("test.db").unwrap();
-//!     let query = Select::default().value(1);
-//!     let result = conn.query(query.into()).unwrap();
-//!
-//!     assert_eq!(
-//!         Some(1),
-//!         result.into_iter().nth(0).and_then(|row| row[0].as_i64()),
-//!     );
-//! }
-//! ```
-pub mod ast;
-#[cfg(any(
-    feature = "mysql-16",
-    feature = "postgresql-0_16",
-    feature = "rusqlite-0_19"
+#[cfg(all(
+    not(feature = "tracing-log"),
+    any(feature = "sqlite", feature = "mysql", feature = "postgresql")
 ))]
-pub mod connector;
-pub mod error;
-#[cfg(any(
-    feature = "mysql-16",
-    feature = "postgresql-0_16",
-    feature = "rusqlite-0_19"
-))]
-pub mod pool;
-#[cfg(any(
-    feature = "mysql-16",
-    feature = "postgresql-0_16",
-    feature = "rusqlite-0_19"
-))]
-pub mod visitor;
-
 #[macro_use]
 extern crate log;
 
 #[macro_use]
+#[cfg(any(feature = "sqlite", feature = "mysql", feature = "postgresql"))]
 extern crate metrics;
 
-#[macro_use]
-extern crate debug_stub_derive;
+pub mod ast;
+#[cfg(any(feature = "sqlite", feature = "mysql", feature = "postgresql"))]
+pub mod connector;
+pub mod error;
+#[cfg(all(
+    feature = "pooled",
+    any(feature = "sqlite", feature = "mysql", feature = "postgresql")
+))]
+pub mod pooled;
+pub mod prelude;
+#[cfg(feature = "serde-support")]
+pub mod serde;
+#[cfg(any(feature = "sqlite", feature = "mysql", feature = "postgresql"))]
+pub mod single;
+pub mod visitor;
+
+use once_cell::sync::Lazy;
+
+pub use ast::Value;
+
+pub(crate) static LOG_QUERIES: Lazy<bool> = Lazy::new(|| std::env::var("LOG_QUERIES").map(|_| true).unwrap_or(false));
 
 pub type Result<T> = std::result::Result<T, error::Error>;
-
-use lazy_static::lazy_static;
-
-lazy_static! {
-    static ref LOG_QUERIES: bool = std::env::var("PRISMA_LOG_QUERIES")
-        .map(|_| true)
-        .unwrap_or(false);
-}

@@ -4,34 +4,43 @@ mod result_row;
 pub use index::*;
 pub use result_row::*;
 
-use crate::ast::ParameterizedValue;
-use std::{
-    collections::{btree_map::Keys, BTreeMap},
-    sync::Arc,
-};
+use crate::{ast::Value, error::*};
+use std::sync::Arc;
 
 #[cfg(feature = "json-1")]
-use serde_json::{Map, Value};
+use serde_json::Map;
 
 /// Encapsulates a set of results and their respective column names.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ResultSet {
-    pub(crate) rows: Vec<Vec<ParameterizedValue<'static>>>,
-    pub(crate) name_to_index: Arc<BTreeMap<String, usize>>,
+    pub(crate) columns: Arc<Vec<String>>,
+    pub(crate) rows: Vec<Vec<Value<'static>>>,
+    pub(crate) last_insert_id: Option<u64>,
 }
 
 impl ResultSet {
     /// Creates a new instance, bound to the given column names and result rows.
-    pub fn new(names: Vec<String>, rows: Vec<Vec<ParameterizedValue<'static>>>) -> ResultSet {
-        ResultSet {
-            name_to_index: Arc::new(Self::build_name_map(names)),
+    pub fn new(names: Vec<String>, rows: Vec<Vec<Value<'static>>>) -> Self {
+        Self {
+            columns: Arc::new(names),
             rows,
+            last_insert_id: None,
         }
     }
 
+    pub(crate) fn set_last_insert_id(&mut self, id: u64) {
+        self.last_insert_id = Some(id);
+    }
+
+    /// The last id inserted, if available. Only works on certain databases and
+    /// if using an auto-increment ids.
+    pub fn last_insert_id(&self) -> Option<u64> {
+        self.last_insert_id
+    }
+
     /// An iterator of column names.
-    pub fn columns(&self) -> Keys<'_, String, usize> {
-        self.name_to_index.keys()
+    pub fn columns(&self) -> &Vec<String> {
+        &self.columns
     }
 
     /// Returns the number of rows in the `ResultSet`.
@@ -52,20 +61,17 @@ impl ResultSet {
     /// Returns a reference to a row in a given position.
     pub fn get(&self, index: usize) -> Option<ResultRowRef> {
         self.rows.get(index).map(|row| ResultRowRef {
-            name_to_index: Arc::clone(&self.name_to_index),
+            columns: Arc::clone(&self.columns),
             values: row,
         })
     }
 
-    /// Creates a lookup map for column names.
-    fn build_name_map(names: Vec<String>) -> BTreeMap<String, usize> {
-        names
-            .into_iter()
-            .enumerate()
-            .fold(BTreeMap::new(), |mut acc, (i, name)| {
-                acc.insert(name, i);
-                acc
-            })
+    /// Takes the first row if existing, otherwise returns error.
+    pub fn into_single(self) -> crate::Result<ResultRow> {
+        match self.into_iter().next() {
+            Some(row) => Ok(row),
+            None => Err(Error::builder(ErrorKind::NotFound).build()),
+        }
     }
 }
 
@@ -75,7 +81,7 @@ impl IntoIterator for ResultSet {
 
     fn into_iter(self) -> Self::IntoIter {
         ResultSetIterator {
-            name_to_index: self.name_to_index,
+            columns: self.columns,
             internal_iterator: self.rows.into_iter(),
         }
     }
@@ -84,8 +90,8 @@ impl IntoIterator for ResultSet {
 /// Thin iterator for ResultSet rows.
 /// Might become lazy one day.
 pub struct ResultSetIterator {
-    pub(crate) name_to_index: Arc<BTreeMap<String, usize>>,
-    pub(crate) internal_iterator: std::vec::IntoIter<Vec<ParameterizedValue<'static>>>,
+    pub(crate) columns: Arc<Vec<String>>,
+    pub(crate) internal_iterator: std::vec::IntoIter<Vec<Value<'static>>>,
 }
 
 impl Iterator for ResultSetIterator {
@@ -94,7 +100,7 @@ impl Iterator for ResultSetIterator {
     fn next(&mut self) -> Option<Self::Item> {
         match self.internal_iterator.next() {
             Some(row) => Some(ResultRow {
-                name_to_index: Arc::clone(&self.name_to_index),
+                columns: Arc::clone(&self.columns),
                 values: row,
             }),
             None => None,
@@ -103,9 +109,9 @@ impl Iterator for ResultSetIterator {
 }
 
 #[cfg(feature = "json-1")]
-impl From<ResultSet> for Value {
+impl From<ResultSet> for serde_json::Value {
     fn from(result_set: ResultSet) -> Self {
-        let columns: Vec<String> = result_set.columns().map(ToString::to_string).collect();
+        let columns: Vec<String> = result_set.columns().iter().map(ToString::to_string).collect();
         let mut result = Vec::new();
 
         for row in result_set.into_iter() {
@@ -113,12 +119,12 @@ impl From<ResultSet> for Value {
 
             for (idx, p_value) in row.into_iter().enumerate() {
                 let column_name: String = columns[idx].clone();
-                object.insert(column_name, Value::from(p_value));
+                object.insert(column_name, serde_json::Value::from(p_value));
             }
 
-            result.push(Value::Object(object));
+            result.push(serde_json::Value::Object(object));
         }
 
-        Value::Array(result)
+        serde_json::Value::Array(result)
     }
 }

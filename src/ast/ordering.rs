@@ -1,6 +1,6 @@
-use crate::ast::{Column, DatabaseValue};
+use crate::ast::{Column, Expression};
 
-pub type OrderDefinition<'a> = (DatabaseValue<'a>, Option<Order>);
+pub type OrderDefinition<'a> = (Expression<'a>, Option<Order>);
 
 /// A list of definitions for the `ORDER BY` statement
 #[derive(Debug, Default, PartialEq, Clone)]
@@ -13,12 +13,10 @@ impl<'a> Ordering<'a> {
         self
     }
 
-    #[inline]
     pub fn new(values: Vec<OrderDefinition<'a>>) -> Self {
         Self(values)
     }
 
-    #[inline]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -42,13 +40,11 @@ where
     fn order(self, order: Option<Order>) -> OrderDefinition<'a>;
 
     /// Change the order to `ASC`
-    #[inline]
     fn ascend(self) -> OrderDefinition<'a> {
         self.order(Some(Order::Asc))
     }
 
     /// Change the order to `DESC`
-    #[inline]
     fn descend(self) -> OrderDefinition<'a> {
         self.order(Some(Order::Desc))
     }
@@ -60,7 +56,6 @@ pub trait IntoOrderDefinition<'a> {
 }
 
 impl<'a> IntoOrderDefinition<'a> for &'a str {
-    #[inline]
     fn into_order_definition(self) -> OrderDefinition<'a> {
         let column: Column<'a> = self.into();
         (column.into(), None)
@@ -68,28 +63,31 @@ impl<'a> IntoOrderDefinition<'a> for &'a str {
 }
 
 impl<'a> IntoOrderDefinition<'a> for Column<'a> {
-    #[inline]
     fn into_order_definition(self) -> OrderDefinition<'a> {
         (self.into(), None)
     }
 }
 
 impl<'a> IntoOrderDefinition<'a> for OrderDefinition<'a> {
-    #[inline]
     fn into_order_definition(self) -> OrderDefinition<'a> {
         self
     }
 }
 
 impl<'a> Orderable<'a> for Column<'a> {
-    #[inline]
     fn order(self, order: Option<Order>) -> OrderDefinition<'a> {
         (self.into(), order)
     }
 }
 
 impl<'a> Orderable<'a> for &'a str {
-    #[inline]
+    fn order(self, order: Option<Order>) -> OrderDefinition<'a> {
+        let column: Column<'a> = self.into();
+        column.order(order)
+    }
+}
+
+impl<'a> Orderable<'a> for (&'a str, &'a str) {
     fn order(self, order: Option<Order>) -> OrderDefinition<'a> {
         let column: Column<'a> = self.into();
         column.order(order)

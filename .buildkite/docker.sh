@@ -15,18 +15,9 @@ docker run --name test-mysql --network test-net \
     -e MYSQL_PASSWORD=prisma -d mysql
 
 docker run -w /build --network test-net -v $BUILDKITE_BUILD_CHECKOUT_PATH:/build \
-    -e TEST_PG_HOST=test-postgres \
-    -e TEST_PG_PORT=5432 \
-    -e TEST_PG_DB=prisma \
-    -e TEST_PG_USER=prisma \
-    -e TEST_PG_PASSWORD=prisma \
-    -e TEST_MYSQL_HOST=test-mysql \
-    -e TEST_MYSQL_PORT=3306 \
-    -e TEST_MYSQL_DB=prisma \
-    -e TEST_MYSQL_USER=prisma \
-    -e TEST_MYSQL_PASSWORD=prisma \
-    -e TEST_MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD \
-    prismagraphql/rust-build:latest cargo test
+    -e TEST_MYSQL=mysql://prisma:prisma@test-mysql:3306/prisma \
+    -e TEST_PSQL=postgres://prisma:prisma@test-postgres:5432/prisma \
+    prismagraphql/build:test cargo test --features full,json-1,uuid-0_8,chrono-0_4,tracing-log,serde-support
 
 exit_code=$?
 

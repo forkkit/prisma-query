@@ -5,12 +5,11 @@ use crate::ast::*;
 pub struct Update<'a> {
     pub(crate) table: Table<'a>,
     pub(crate) columns: Vec<Column<'a>>,
-    pub(crate) values: Vec<DatabaseValue<'a>>,
+    pub(crate) values: Vec<Expression<'a>>,
     pub(crate) conditions: Option<ConditionTree<'a>>,
 }
 
 impl<'a> From<Update<'a>> for Query<'a> {
-    #[inline]
     fn from(update: Update<'a>) -> Self {
         Query::Update(Box::new(update))
     }
@@ -18,7 +17,6 @@ impl<'a> From<Update<'a>> for Query<'a> {
 
 impl<'a> Update<'a> {
     /// Creates the basis for an `UPDATE` statement to the given table.
-    #[inline]
     pub fn table<T>(table: T) -> Self
     where
         T: Into<Table<'a>>,
@@ -34,7 +32,7 @@ impl<'a> Update<'a> {
     /// Add another column value assignment to the query
     ///
     /// ```rust
-    /// # use prisma_query::{ast::*, visitor::{Visitor, Sqlite}};
+    /// # use quaint::{ast::*, visitor::{Visitor, Sqlite}};
     /// let query = Update::table("users").set("foo", 10).set("bar", false);
     /// let (sql, params) = Sqlite::build(query);
     ///
@@ -42,8 +40,8 @@ impl<'a> Update<'a> {
     ///
     /// assert_eq!(
     ///     vec![
-    ///         ParameterizedValue::Integer(10),
-    ///         ParameterizedValue::Boolean(false),
+    ///         Value::Integer(10),
+    ///         Value::Boolean(false),
     ///     ],
     ///     params,
     /// );
@@ -51,7 +49,7 @@ impl<'a> Update<'a> {
     pub fn set<K, V>(mut self, column: K, value: V) -> Update<'a>
     where
         K: Into<Column<'a>>,
-        V: Into<DatabaseValue<'a>>,
+        V: Into<Expression<'a>>,
     {
         self.columns.push(column.into());
         self.values.push(value.into());
@@ -63,7 +61,7 @@ impl<'a> Update<'a> {
     /// [Comparable](trait.Comparable.html#required-methods) for more examples.
     ///
     /// ```rust
-    /// # use prisma_query::{ast::*, visitor::{Visitor, Sqlite}};
+    /// # use quaint::{ast::*, visitor::{Visitor, Sqlite}};
     /// let query = Update::table("users").set("foo", 1).so_that("bar".equals(false));
     /// let (sql, params) = Sqlite::build(query);
     ///
@@ -71,8 +69,8 @@ impl<'a> Update<'a> {
     ///
     /// assert_eq!(
     ///     vec![
-    ///         ParameterizedValue::Integer(1),
-    ///         ParameterizedValue::Boolean(false),
+    ///         Value::Integer(1),
+    ///         Value::Boolean(false),
     ///     ],
     ///     params,
     /// );
@@ -81,7 +79,7 @@ impl<'a> Update<'a> {
     /// We can also use a nested `SELECT` in the conditions.
     ///
     /// ```rust
-    /// # use prisma_query::{ast::*, visitor::{Visitor, Sqlite}};
+    /// # use quaint::{ast::*, visitor::{Visitor, Sqlite}};
     /// let select = Select::from_table("bars").column("id").so_that("uniq_val".equals(3));
     /// let query = Update::table("users").set("foo", 1).so_that("bar".equals(select));
     /// let (sql, params) = Sqlite::build(query);
@@ -93,8 +91,8 @@ impl<'a> Update<'a> {
     ///
     /// assert_eq!(
     ///     vec![
-    ///         ParameterizedValue::Integer(1),
-    ///         ParameterizedValue::Integer(3),
+    ///         Value::Integer(1),
+    ///         Value::Integer(3),
     ///     ],
     ///     params,
     /// );

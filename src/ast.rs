@@ -4,46 +4,48 @@
 //! without going into database-level specifics. Everything related to the
 //! actual query building is in the [visitor](../visitor/index.html) module.
 //!
-//! For prelude, all important imports are in `prisma_query::ast::*`.
+//! For prelude, all important imports are in `quaint::ast::*`.
 mod column;
 mod compare;
 mod conditions;
-mod conjuctive;
+mod conjunctive;
 mod delete;
 mod expression;
 mod function;
 mod grouping;
-mod id;
 mod insert;
 mod join;
+mod ops;
 mod ordering;
 mod over;
 mod query;
 mod row;
 mod select;
 mod table;
-mod union_all;
+mod union;
 mod update;
 mod values;
 
 pub use column::Column;
 pub use compare::{Comparable, Compare};
 pub use conditions::ConditionTree;
-pub use conjuctive::Conjuctive;
+pub use conjunctive::Conjunctive;
 pub use delete::Delete;
-pub use expression::Expression;
+pub use expression::*;
 pub use function::*;
 pub use grouping::*;
-pub use id::Id;
 pub use insert::*;
 pub use join::{Join, JoinData, Joinable};
+pub use ops::*;
 pub use ordering::{IntoOrderDefinition, Order, OrderDefinition, Orderable, Ordering};
 pub use over::*;
 pub use query::Query;
 pub use row::Row;
 pub use select::Select;
 pub use table::*;
-pub use union_all::UnionAll;
+pub use union::Union;
 pub use update::*;
+pub use values::{Value, Values};
+
+#[cfg(any(feature = "sqlite", feature = "mysql", feature = "postgresql"))]
 pub(crate) use values::Params;
-pub use values::{asterisk, DatabaseValue, ParameterizedValue};

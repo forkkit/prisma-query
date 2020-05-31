@@ -1,42 +1,42 @@
-use crate::ast::{ParameterizedValue, Params};
-use std::time::Instant;
+use crate::ast::{Params, Value};
+use std::{future::Future, time::Instant};
 
-pub(crate) fn query<'a, F, T>(
+pub(crate) async fn query<'a, F, T, U>(
     tag: &'static str,
-    query: &str,
-    params: &[ParameterizedValue<'a>],
+    query: &'a str,
+    params: &'a [Value<'_>],
     f: F,
-) -> T
+) -> crate::Result<T>
 where
-    F: FnOnce() -> T,
+    F: FnOnce() -> U + Send + 'a,
+    U: Future<Output = crate::Result<T>> + Send,
 {
     let start = Instant::now();
-    let res = f();
+    let res = f().await;
     let end = Instant::now();
 
     if *crate::LOG_QUERIES {
-        info!(
-            "query: \"{}\", params: {} (in {}ms)",
-            query,
-            Params(params),
-            start.elapsed().as_millis(),
-        );
+        #[cfg(not(feature = "tracing-log"))]
+        {
+            info!(
+                "query: \"{}\", params: {} (in {}ms)",
+                query,
+                Params(params),
+                start.elapsed().as_millis(),
+            );
+        }
+        #[cfg(feature = "tracing-log")]
+        {
+            tracing::info!(
+                query,
+                item_type = "query",
+                params = %Params(params),
+                duration_ms = start.elapsed().as_millis() as u64,
+            )
+        }
     }
 
     timing!(format!("{}.query.time", tag), start, end);
-
-    res
-}
-
-pub(crate) fn connect<F, T>(tag: &'static str, f: F) -> T
-where
-    F: FnOnce() -> T,
-{
-    let start = Instant::now();
-    let res = f();
-    let end = Instant::now();
-
-    timing!(format!("{}.connect.time", tag), start, end);
 
     res
 }

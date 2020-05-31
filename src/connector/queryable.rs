@@ -1,9 +1,13 @@
 use super::{ResultSet, Transaction};
 use crate::ast::*;
-use std::ops::DerefMut;
+use async_trait::async_trait;
 
-pub trait ToRow {
-    fn to_result_row(&self) -> crate::Result<Vec<ParameterizedValue<'static>>>;
+pub trait GetRow {
+    fn get_result_row(&self) -> crate::Result<Vec<Value<'static>>>;
+}
+
+pub trait TakeRow {
+    fn take_result_row(&mut self) -> crate::Result<Vec<Value<'static>>>;
 }
 
 pub trait ToColumnNames {
@@ -11,95 +15,66 @@ pub trait ToColumnNames {
 }
 
 /// Represents a connection or a transaction that can be queried.
-pub trait Queryable {
-    /// Executes the given query and returns the ID of the last inserted row.
-    fn execute(&mut self, q: Query) -> crate::Result<Option<Id>>;
+#[async_trait]
+pub trait Queryable: Send + Sync {
+    /// Execute the given query.
+    async fn query(&self, q: Query<'_>) -> crate::Result<ResultSet>;
 
-    /// Executes the given query and returns the result set.
-    fn query(&mut self, q: Query) -> crate::Result<ResultSet>;
+    /// Execute a query given as SQL, interpolating the given parameters.
+    async fn query_raw(&self, sql: &str, params: &[Value<'_>]) -> crate::Result<ResultSet>;
 
-    /// Executes a query given as SQL, interpolating the given parameters and
-    /// returning a set of results.
-    fn query_raw(&mut self, sql: &str, params: &[ParameterizedValue]) -> crate::Result<ResultSet>;
+    /// Execute the given query, returning the number of affected rows.
+    async fn execute(&self, q: Query<'_>) -> crate::Result<u64>;
 
-    /// Executes a query given as SQL, interpolating the given parameters and
+    /// Execute a query given as SQL, interpolating the given parameters and
     /// returning the number of affected rows.
-    fn execute_raw(&mut self, sql: &str, params: &[ParameterizedValue]) -> crate::Result<u64>;
+    async fn execute_raw(&self, sql: &str, params: &[Value<'_>]) -> crate::Result<u64>;
 
-    /// Turns off all foreign key constraints.
-    fn turn_off_fk_constraints(&mut self) -> crate::Result<()>;
-
-    /// Turns on all foreign key constraints.
-    fn turn_on_fk_constraints(&mut self) -> crate::Result<()>;
-
-    /// Starts a new transaction
-    fn start_transaction<'a>(&'a mut self) -> crate::Result<Transaction<'a>>;
-
-    /// Runs a command in the database, for queries that can't be run using
+    /// Run a command in the database, for queries that can't be run using
     /// prepared statements.
-    fn raw_cmd(&mut self, cmd: &str) -> crate::Result<()>;
+    async fn raw_cmd(&self, cmd: &str) -> crate::Result<()>;
 
-    /// Empties the given set of tables.
-    fn empty_tables(&mut self, tables: Vec<Table>) -> crate::Result<()> {
-        self.turn_off_fk_constraints()?;
+    /// Return the version of the underlying database, queried directly from the
+    /// source. This corresponds to the `version()` function on PostgreSQL for
+    /// example. The version string is returned directly without any form of
+    /// parsing or normalization.
+    async fn version(&self) -> crate::Result<Option<String>>;
 
-        for table in tables {
-            self.query(Delete::from_table(table).into())?;
-        }
+    /// Execute a `SELECT` query.
+    async fn select(&self, q: Select<'_>) -> crate::Result<ResultSet> {
+        self.query(q.into()).await
+    }
 
-        self.turn_on_fk_constraints()?;
+    /// Execute an `INSERT` query.
+    async fn insert(&self, q: Insert<'_>) -> crate::Result<ResultSet> {
+        self.query(q.into()).await
+    }
 
+    /// Execute an `UPDATE` query, returning the number of affected rows.
+    async fn update(&self, q: Update<'_>) -> crate::Result<u64> {
+        self.execute(q.into()).await
+    }
+
+    /// Execute a `DELETE` query, returning the number of affected rows.
+    async fn delete(&self, q: Delete<'_>) -> crate::Result<()> {
+        self.query(q.into()).await?;
         Ok(())
     }
 
-    /// For inserting data. Returns the ID of the last inserted row.
-    fn insert(&mut self, q: Insert) -> crate::Result<Option<Id>> {
-        self.execute(q.into())
-    }
-
-    /// For updating data.
-    fn update(&mut self, q: Update) -> crate::Result<()> {
-        self.execute(q.into())?;
-        Ok(())
-    }
-
-    /// For deleting data.
-    fn delete(&mut self, q: Delete) -> crate::Result<()> {
-        self.execute(q.into())?;
+    /// Execute an arbitrary function in the beginning of each transaction.
+    async fn server_reset_query(&self, _: &Transaction<'_>) -> crate::Result<()> {
         Ok(())
     }
 }
 
-impl<Q: Queryable> Queryable for dyn DerefMut<Target = Q> {
-    fn execute(&mut self, q: Query) -> crate::Result<Option<Id>> {
-        self.deref_mut().execute(q)
-    }
-
-    fn query(&mut self, q: Query) -> crate::Result<ResultSet> {
-        self.deref_mut().query(q)
-    }
-
-    fn query_raw(&mut self, sql: &str, params: &[ParameterizedValue]) -> crate::Result<ResultSet> {
-        self.deref_mut().query_raw(sql, params)
-    }
-
-    fn execute_raw(&mut self, sql: &str, params: &[ParameterizedValue]) -> crate::Result<u64> {
-        self.deref_mut().execute_raw(sql, params)
-    }
-
-    fn turn_off_fk_constraints(&mut self) -> crate::Result<()> {
-        self.deref_mut().turn_off_fk_constraints()
-    }
-
-    fn turn_on_fk_constraints(&mut self) -> crate::Result<()> {
-        self.deref_mut().turn_on_fk_constraints()
-    }
-
-    fn start_transaction<'a>(&'a mut self) -> crate::Result<Transaction<'a>> {
-        self.deref_mut().start_transaction()
-    }
-
-    fn raw_cmd(&mut self, cmd: &str) -> crate::Result<()> {
-        self.deref_mut().raw_cmd(cmd)
+/// A thing that can start a new transaction.
+#[async_trait]
+pub trait TransactionCapable: Queryable
+where
+    Self: Sized + Sync,
+{
+    /// Starts a new transaction
+    async fn start_transaction(&self) -> crate::Result<Transaction<'_>> {
+        Transaction::new(self).await
     }
 }

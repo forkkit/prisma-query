@@ -7,30 +7,29 @@
 //! [PostgreSQL](struct.PostgreSql.html) and [SQLite](struct.Sqlite.html) connect
 //! to the corresponding databases and implement the
 //! [Queryable](trait.Queryable.html) trait for generalized querying interface.
+
 mod queryable;
 mod result_set;
 mod transaction;
 
-pub(crate) mod metrics;
-
-#[cfg(feature = "mysql-16")]
+#[cfg(feature = "mysql")]
 pub(crate) mod mysql;
-
-#[cfg(feature = "postgresql-0_16")]
+#[cfg(feature = "postgresql")]
 pub(crate) mod postgres;
-
-#[cfg(feature = "rusqlite-0_19")]
+#[cfg(feature = "sqlite")]
 pub(crate) mod sqlite;
 
-#[cfg(feature = "mysql-16")]
+#[cfg(feature = "mysql")]
 pub use self::mysql::*;
-
-#[cfg(feature = "postgresql-0_16")]
+#[cfg(feature = "postgresql")]
 pub use self::postgres::*;
-
-#[cfg(feature = "rusqlite-0_19")]
+#[cfg(feature = "sqlite")]
 pub use sqlite::*;
 
+mod connection_info;
+pub use connection_info::*;
+
+pub(crate) mod metrics;
 pub use self::result_set::*;
 pub use queryable::*;
 pub use transaction::*;

@@ -1,18 +1,23 @@
-use crate::ast::{DatabaseValue, Select};
+use super::ExpressionKind;
+use crate::ast::{Expression, Row, Select, Values};
 use std::borrow::Cow;
 
 /// An object that can be aliased.
 pub trait Aliasable<'a> {
+    type Target;
+
     /// Alias table for usage elsewhere in the query.
-    fn alias<T>(self, alias: T) -> Table<'a>
+    fn alias<T>(self, alias: T) -> Self::Target
     where
         T: Into<Cow<'a, str>>;
 }
 
 #[derive(Clone, Debug, PartialEq)]
+/// Either an identifier or a nested query.
 pub enum TableType<'a> {
     Table(Cow<'a, str>),
     Query(Select<'a>),
+    Values(Values<'a>),
 }
 
 /// A table definition
@@ -34,14 +39,15 @@ impl<'a> Table<'a> {
     }
 
     /// A qualified asterisk to this table
-    #[inline]
-    pub fn asterisk(self) -> DatabaseValue<'a> {
-        DatabaseValue::Asterisk(Some(Box::new(self)))
+    pub fn asterisk(self) -> Expression<'a> {
+        Expression {
+            kind: ExpressionKind::Asterisk(Some(Box::new(self))),
+            alias: None,
+        }
     }
 }
 
 impl<'a> From<&'a str> for Table<'a> {
-    #[inline]
     fn from(s: &'a str) -> Table<'a> {
         Table {
             typ: TableType::Table(s.into()),
@@ -52,7 +58,6 @@ impl<'a> From<&'a str> for Table<'a> {
 }
 
 impl<'a> From<(&'a str, &'a str)> for Table<'a> {
-    #[inline]
     fn from(s: (&'a str, &'a str)) -> Table<'a> {
         let table: Table<'a> = s.1.into();
         table.database(s.0)
@@ -60,7 +65,6 @@ impl<'a> From<(&'a str, &'a str)> for Table<'a> {
 }
 
 impl<'a> From<String> for Table<'a> {
-    #[inline]
     fn from(s: String) -> Self {
         Table {
             typ: TableType::Table(s.into()),
@@ -70,8 +74,23 @@ impl<'a> From<String> for Table<'a> {
     }
 }
 
+impl<'a> From<Vec<Row<'a>>> for Table<'a> {
+    fn from(values: Vec<Row<'a>>) -> Self {
+        Table::from(Values::from(values.into_iter()))
+    }
+}
+
+impl<'a> From<Values<'a>> for Table<'a> {
+    fn from(values: Values<'a>) -> Self {
+        Self {
+            typ: TableType::Values(values),
+            alias: None,
+            database: None,
+        }
+    }
+}
+
 impl<'a> From<(String, String)> for Table<'a> {
-    #[inline]
     fn from(s: (String, String)) -> Table<'a> {
         let table: Table<'a> = s.1.into();
         table.database(s.0)
@@ -79,7 +98,6 @@ impl<'a> From<(String, String)> for Table<'a> {
 }
 
 impl<'a> From<Select<'a>> for Table<'a> {
-    #[inline]
     fn from(select: Select<'a>) -> Self {
         Table {
             typ: TableType::Query(select),
@@ -90,7 +108,9 @@ impl<'a> From<Select<'a>> for Table<'a> {
 }
 
 impl<'a> Aliasable<'a> for Table<'a> {
-    fn alias<T>(mut self, alias: T) -> Table<'a>
+    type Target = Table<'a>;
+
+    fn alias<T>(mut self, alias: T) -> Self::Target
     where
         T: Into<Cow<'a, str>>,
     {
@@ -103,8 +123,9 @@ macro_rules! aliasable {
     ($($kind:ty),*) => (
         $(
             impl<'a> Aliasable<'a> for $kind {
-                #[inline]
-                fn alias<T>(self, alias: T) -> Table<'a>
+                type Target = Table<'a>;
+
+                fn alias<T>(self, alias: T) -> Self::Target
                 where
                     T: Into<Cow<'a, str>>,
                 {

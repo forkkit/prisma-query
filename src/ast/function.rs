@@ -1,12 +1,16 @@
 mod aggregate_to_string;
+mod average;
 mod count;
 mod row_number;
+mod sum;
 
 pub use aggregate_to_string::*;
+pub use average::*;
 pub use count::*;
 pub use row_number::*;
+pub use sum::*;
 
-use super::DatabaseValue;
+use super::{Aliasable, Expression};
 use std::borrow::Cow;
 
 /// A database function definition
@@ -22,13 +26,16 @@ pub(crate) enum FunctionType<'a> {
     RowNumber(RowNumber<'a>),
     Count(Count<'a>),
     AggregateToString(AggregateToString<'a>),
+    Average(Average<'a>),
+    Sum(Sum<'a>),
 }
 
-impl<'a> Function<'a> {
-    /// Give the function an alias in the query.
-    pub fn alias<S>(mut self, alias: S) -> Self
+impl<'a> Aliasable<'a> for Function<'a> {
+    type Target = Function<'a>;
+
+    fn alias<T>(mut self, alias: T) -> Self::Target
     where
-        S: Into<Cow<'a, str>>,
+        T: Into<Cow<'a, str>>,
     {
         self.alias = Some(alias.into());
         self
@@ -39,7 +46,6 @@ macro_rules! function {
     ($($kind:ident),*) => (
         $(
             impl<'a> From<$kind<'a>> for Function<'a> {
-                #[inline]
                 fn from(f: $kind<'a>) -> Self {
                     Function {
                         typ_: FunctionType::$kind(f),
@@ -48,8 +54,7 @@ macro_rules! function {
                 }
             }
 
-            impl<'a> From<$kind<'a>> for DatabaseValue<'a> {
-                #[inline]
+            impl<'a> From<$kind<'a>> for Expression<'a> {
                 fn from(f: $kind<'a>) -> Self {
                     Function::from(f).into()
                 }
@@ -58,4 +63,4 @@ macro_rules! function {
     );
 }
 
-function!(RowNumber, Count, AggregateToString);
+function!(RowNumber, Count, AggregateToString, Average, Sum);
